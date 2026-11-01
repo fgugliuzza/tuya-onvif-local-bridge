@@ -1,0 +1,13 @@
+services:
+  tuya-onvif-local-bridge:
+    build: .
+    restart: unless-stopped
+    network_mode: host
+    env_file: .env
+    volumes:
+      - ./data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
