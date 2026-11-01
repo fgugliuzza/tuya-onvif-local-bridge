@@ -1,4 +1,4 @@
-# Tuya ONVIF PTZ bridge (experimental)
+# Tuya ONVIF PTZ bridge
 
 A Python bridge exposing ONVIF Device, Media (minimal), PTZ, and WS-Discovery for a Tuya LAN camera using TinyTuya. **Not yet hardware-validated or ONVIF-conformance-certified.**
 
@@ -26,7 +26,7 @@ Eight directions are mapped via `TUYA_DIRECTION_CODES`. **Default numeric codes 
 
 ## Limitations
 
-The Media profile advertises H.264 video encoder metadata and a required `ONVIF_STREAM_URI` (RTSP/RTSPS). The URI is returned verbatim by `GetStreamUri`; the bridge does not proxy or validate the stream. Resolution, frame rate, bitrate and codec settings are currently fixed advertised metadata, not discovered from the camera: adjust the code if your stream differs. Authentication for the RTSP server is independent of ONVIF authentication. WS-Discovery supports Probe and Resolve; Hello/Bye are pending. Client interoperability needs testing. A lost connection triggers bounded reconnect attempts, then process exit for Docker restart.
+The Media profile advertises H.264 video encoder metadata and a required `ONVIF_STREAM_URI` (RTSP/RTSPS). The URI is returned verbatim by `GetStreamUri`; the bridge does not proxy or validate the stream. By default, resolution, frame rate, bitrate and codec settings are provisional advertised metadata; PyAV probing, enabled by default, can update these values from the configured stream. Authentication for the RTSP server is independent of ONVIF authentication. WS-Discovery supports Probe and Resolve; Hello/Bye are pending. Client interoperability needs testing. A lost connection triggers bounded reconnect attempts, then process exit for Docker restart.
 
 ### Important acknowledgement caveat
 
@@ -140,3 +140,23 @@ Licensed under the GNU General Public License, version 3 or (at your option) any
 - Project source: https://github.com/fgugliuzza/tuya-onvif-local-bridge
 
 The project’s third-party dependencies retain their respective licenses.
+
+## RTSP metadata probing
+
+Enabled by default with `RTSP_PROBE=1` (set to `0` to disable), at startup the bridge asynchronously attempts to inspect the configured RTSP stream with PyAV,
+using the ONVIF credentials internally. If probing fails, provisional values
+are retained. The advertised GetStreamUri does not include credentials.
+
+PyAV passes the configured credentials to FFmpeg/libavformat, which negotiates RTSP authentication with the camera. No particular RTSP authentication scheme is required by the bridge.
+
+The probe samples decoded video presentation timestamps (derived from RTP) to
+estimate actual frame rate. It reports GOP length only after observing at least
+three keyframes with consistent spacing; otherwise GOP remains unknown internally
+and the ONVIF H.264 configuration retains its provisional value. Probing is
+bounded, best-effort, and refreshed after a successful TinyTuya reconnection;
+failed refreshes retain the last verified metadata. It does not discover
+secondary streams: only the explicitly configured `ONVIF_STREAM_URI` is probed.
+Changes to that URI require restarting the service. Variable frame rates are
+summarized as a sampled average, not advertised as a constant guarantee.
+
+RTSP probing defaults: 10-second connect timeout, 10-second read timeout, up to 60 seconds of frame sampling, and a 75-second overall asyncio deadline. Configure them using `RTSP_PROBE_CONNECT_TIMEOUT`, `RTSP_PROBE_READ_TIMEOUT`, `RTSP_PROBE_SAMPLE_DURATION`, and `RTSP_PROBE_TOTAL_TIMEOUT`. The asyncio deadline does not forcibly terminate a blocked FFmpeg worker thread.

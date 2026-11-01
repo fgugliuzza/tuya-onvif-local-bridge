@@ -13,7 +13,7 @@ def test_import_package():
 def test_distribution_and_entrypoint():
     project = tomllib.loads(Path("pyproject.toml").read_text())["project"]
     assert project["name"] == "tuya-onvif-local-bridge"
-    assert project["version"] == "0.1.15"
+    assert project["version"] == "0.1.18"
     assert project["scripts"]["tuya-onvif-local-bridge"] == "tuya_onvif_local_bridge.app:main"
 
 def test_preset_identity_seed_unchanged():

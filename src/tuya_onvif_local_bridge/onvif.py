@@ -10,6 +10,7 @@ from aiohttp import web
 from lxml import etree as E
 from .soap import S,T,P,M,TT,NS,el,envelope,xml,fault_xml,Fault,read_request,field,authenticate
 from .tuya import TuyaError, TuyaTransportError
+from .rtsp_probe import StreamInfo
 
 log = logging.getLogger(__name__)
 
@@ -17,6 +18,7 @@ class Onvif:
     def __init__(self, config, camera, registry):
         self.cfg, self.camera, self.registry = config, camera, registry
         self.nonces = {}
+        self.stream_info = StreamInfo()
         self.profile = 'profile_1'
         self.ptzconfig = 'ptz_1'
         self.node = 'node_1'
@@ -102,17 +104,18 @@ class Onvif:
     def _video_source_config(self, parent, element='VideoSourceConfiguration', namespace=TT):
         v=el(parent,namespace,element,token='video_source_config_1')
         el(v,TT,'Name','Camera source'); el(v,TT,'UseCount',1); el(v,TT,'SourceToken','video_source_1')
-        el(v,TT,'Bounds',x=0,y=0,width=1920,height=1080)
+        el(v,TT,'Bounds',x=0,y=0,width=self.stream_info.width,height=self.stream_info.height)
         return v
 
     def _video_encoder_config(self, parent, element='VideoEncoderConfiguration', namespace=TT):
         v=el(parent,namespace,element,token='video_encoder_config_1')
-        el(v,TT,'Name','RTSP H264'); el(v,TT,'UseCount',1)
-        el(v,TT,'Encoding','H264')
-        r=el(v,TT,'Resolution'); el(r,TT,'Width',1920); el(r,TT,'Height',1080)
+        el(v,TT,'Name','RTSP '+self.stream_info.codec); el(v,TT,'UseCount',1)
+        el(v,TT,'Encoding',self.stream_info.codec)
+        r=el(v,TT,'Resolution'); el(r,TT,'Width',self.stream_info.width); el(r,TT,'Height',self.stream_info.height)
         el(v,TT,'Quality',5)
-        rate=el(v,TT,'RateControl'); el(rate,TT,'FrameRateLimit',15); el(rate,TT,'EncodingInterval',1); el(rate,TT,'BitrateLimit',2048)
-        h=el(v,TT,'H264'); el(h,TT,'GovLength',30); el(h,TT,'H264Profile','Main')
+        rate=el(v,TT,'RateControl'); el(rate,TT,'FrameRateLimit',max(1,round(self.stream_info.fps))); el(rate,TT,'EncodingInterval',1); el(rate,TT,'BitrateLimit',self.stream_info.bitrate_kbps)
+        if self.stream_info.codec == 'H264':
+            h=el(v,TT,'H264'); el(h,TT,'GovLength',self.stream_info.gop or 30); el(h,TT,'H264Profile',self.stream_info.profile)
         # ONVIF requires Multicast before SessionTimeout, even for unicast-only devices.
         multicast=el(v,TT,'Multicast')
         address=el(multicast,TT,'Address')
@@ -140,8 +143,8 @@ class Onvif:
         if field(action,'ProfileToken') not in (None,self.profile): raise Fault('ter:NoProfile','Unknown profile')
 
     async def media_GetVideoSources(self, action):
-        root,r=envelope(M,'GetVideoSourcesResponse'); v=el(r,M,'VideoSources',token='video_source_1'); el(v,TT,'Framerate',15)
-        res=el(v,TT,'Resolution'); el(res,TT,'Width',1920); el(res,TT,'Height',1080)
+        root,r=envelope(M,'GetVideoSourcesResponse'); v=el(r,M,'VideoSources',token='video_source_1'); el(v,TT,'Framerate',max(1,round(self.stream_info.fps)))
+        res=el(v,TT,'Resolution'); el(res,TT,'Width',self.stream_info.width); el(res,TT,'Height',self.stream_info.height)
         return root
 
     async def media_GetVideoSourceConfigurations(self, action):
@@ -162,10 +165,11 @@ class Onvif:
         root,r=envelope(M,'GetVideoEncoderConfigurationOptionsResponse')
         opts=el(r,M,'Options'); el(opts,TT,'QualityRange')
         quality=opts[-1]; el(quality,TT,'Min',1); el(quality,TT,'Max',10)
-        h=el(opts,TT,'H264'); resolutions=el(h,TT,'ResolutionsAvailable'); el(resolutions,TT,'Width',1920); el(resolutions,TT,'Height',1080)
-        for name,low,high in [('GovLengthRange',1,300),('FrameRateRange',1,30),('EncodingIntervalRange',1,1)]:
-            rng=el(h,TT,name); el(rng,TT,'Min',low); el(rng,TT,'Max',high)
-        el(h,TT,'H264ProfilesSupported','Main')
+        if self.stream_info.codec == 'H264':
+            h=el(opts,TT,'H264'); resolutions=el(h,TT,'ResolutionsAvailable'); el(resolutions,TT,'Width',self.stream_info.width); el(resolutions,TT,'Height',self.stream_info.height)
+            for name,low,high in [('GovLengthRange',1,300),('FrameRateRange',1,max(1,round(self.stream_info.fps))),('EncodingIntervalRange',1,1)]:
+                rng=el(h,TT,name); el(rng,TT,'Min',low); el(rng,TT,'Max',high)
+            el(h,TT,'H264ProfilesSupported',self.stream_info.profile)
         return root
 
     async def media_GetServiceCapabilities(self, action):

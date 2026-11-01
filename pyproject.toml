@@ -3,11 +3,11 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 [project]
 name = "tuya-onvif-local-bridge"
-version = "0.1.15"
+version = "0.1.18"
 requires-python = ">=3.11"
 license = "GPL-3.0-or-later"
 authors = [{ name = "Francesco Gugliuzza" }]
-dependencies = ["aiohttp>=3.9,<4", "lxml>=5,<7", "tinytuya>=1.16,<2"]
+dependencies = ["aiohttp>=3.9,<4", "lxml>=5,<7", "tinytuya>=1.16,<2", "av>=13,<17"]
 [project.urls]
 Homepage = "https://gugliuzza.cloud"
 Source = "https://github.com/fgugliuzza/tuya-onvif-local-bridge"

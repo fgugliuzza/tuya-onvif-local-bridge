@@ -34,6 +34,7 @@ class TuyaCamera:
         self.moving = False
         self.dead = False
         self.stop_task = None
+        self.on_reconnect = None
 
     def _new_device(self):
         if self.factory:
@@ -78,6 +79,12 @@ class TuyaCamera:
     async def _recover(self):
         try:
             await self.connect()
+            if self.on_reconnect is not None:
+                # Do not delay or fail PTZ recovery for a metadata refresh.
+                try:
+                    self.on_reconnect()
+                except Exception:
+                    log.warning('RTSP metadata refresh scheduling failed')
             if self.moving:
                 try: await asyncio.to_thread(self._set_sync, '116', True)
                 except Exception: log.warning('Best-effort stop after reconnect failed')
